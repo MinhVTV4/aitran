@@ -381,7 +381,6 @@
         const userEmailDisplay = document.getElementById('userEmail');
         const authStatus = document.getElementById('authStatus');
 
-        // UPDATED Firebase Config
         const firebaseConfig = {
             apiKey: "AIzaSyA59vtuIdiQ-EOF5-XsUTk21RIpWWZLK7A",
             authDomain: "trans-98f6e.firebaseapp.com",
@@ -415,6 +414,9 @@
         let finalTranscriptForBubble = '';
         let unsubscribeHistory = null;
         let chatSession = null;
+        let voicesLoaded = false;
+        let voicesReadyResolve;
+        const voicesReadyPromise = new Promise(resolve => { voicesReadyResolve = resolve; });
         
         let appSettings = {
             recordingMode: 'hold',
@@ -436,6 +438,7 @@
             "hi-IN": { name: "हिन्दी", ttsName: "hi-IN", geminiName: "Hindi", ttsPrefix: "hi" },
             "zh-CN": { name: "中文 (普通话)", ttsName: "zh-CN", geminiName: "Mandarin Chinese", ttsPrefix: "zh" },
             "pt-BR": { name: "Português", ttsName: "pt-BR", geminiName: "Portuguese", ttsPrefix: "pt" },
+            // Simplified codes for targetLangSelect
             "vi": { name: "Tiếng Việt", ttsName: "vi-VN", geminiName: "Vietnamese", ttsPrefix: "vi" },
             "en": { name: "English", ttsName: "en-US", geminiName: "English", ttsPrefix: "en" },
             "es": { name: "Español", ttsName: "es-ES", geminiName: "Spanish", ttsPrefix: "es" },
@@ -527,7 +530,7 @@
                 '<p class="font-medium">Chào bạn!</p><p class="text-sm text-gray-600 mt-1">Bắt đầu một cuộc trò chuyện mới. Dữ liệu ngữ cảnh đã được làm mới.</p>',
                 'assistant'
             );
-
+            
             chatSession = generativeModel.startChat({
                 history: []
             });
@@ -649,9 +652,15 @@
             if (appSettings.voiceURI && voiceSelect.querySelector(`option[value="${appSettings.voiceURI}"]`)) {
                 voiceSelect.value = appSettings.voiceURI;
             }
+
+            if (!voicesLoaded) {
+                voicesLoaded = true;
+                voicesReadyResolve();
+            }
         }
         
-        function speakText(text, langCode) {
+        async function speakText(text, langCode) {
+            await voicesReadyPromise;
             return new Promise((resolve) => {
                 if (!text || !langCode || !window.speechSynthesis) {
                     resolve();
@@ -774,24 +783,26 @@
             } catch (e) { console.error("Error saving translation: ", e); }
         }
 
-        function speakSequentially(textsToSpeak) {
+        async function speakSequentially(textsToSpeak) {
+            await voicesReadyPromise;
             speechSynthesis.cancel();
-            let currentIndex = 0;
-            function speakNext() {
-                if (currentIndex >= textsToSpeak.length) return;
-                const item = textsToSpeak[currentIndex];
-                const utterance = new SpeechSynthesisUtterance(item.text);
-                
-                const voices = speechSynthesis.getVoices();
-                const targetLangPrefix = languageMap[item.lang]?.ttsPrefix;
-                let voiceToUse = voices.find(v => v.lang.startsWith(targetLangPrefix));
-                if(voiceToUse) utterance.voice = voiceToUse;
+            for (const item of textsToSpeak) {
+                await new Promise(resolve => {
+                    const utterance = new SpeechSynthesisUtterance(item.text);
+                    const voices = speechSynthesis.getVoices();
+                    const targetLangPrefix = languageMap[item.lang]?.ttsPrefix;
+                    let voiceToUse = voices.find(v => v.lang.startsWith(targetLangPrefix));
+                    if(voiceToUse) utterance.voice = voiceToUse;
 
-                utterance.lang = languageMap[item.lang]?.ttsName || item.lang;
-                utterance.onend = () => { currentIndex++; speakNext(); };
-                speechSynthesis.speak(utterance);
+                    utterance.lang = languageMap[item.lang]?.ttsName || item.lang;
+                    utterance.onend = resolve;
+                    utterance.onerror = (e) => {
+                        console.error("Sequential speech error", e);
+                        resolve(); 
+                    };
+                    speechSynthesis.speak(utterance);
+                });
             }
-            speakNext();
         }
 
         // --- NEW Gemini Feature Functions ---
@@ -1104,7 +1115,7 @@
 
         loadSettings();
         initializeSpeechRecognition();
-        startNewChatSession();
+        startNewChatSession(true);
 
         if (speechSynthesis.onvoiceschanged !== undefined) {
             speechSynthesis.onvoiceschanged = populateVoiceList;
