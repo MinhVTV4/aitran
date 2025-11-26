@@ -399,7 +399,7 @@
         let generativeModel;
         try {
             const firebaseAIService = getAI(app);
-            generativeModel = getGenerativeModel(firebaseAIService, { model: "gemini-1.5-flash" });
+            generativeModel = getGenerativeModel(firebaseAIService, { model: "gemini-2.5-flash" });
         } catch (error) {
             console.error("Lỗi khởi tạo Firebase AI Logic:", error);
             showUIMessage("Lỗi khởi tạo dịch vụ AI.", 5000);
